@@ -1,13 +1,13 @@
 const $=s=>document.querySelector(s), $$=s=>document.querySelectorAll(s);
 
 const el={
-  title:$('#sessionTitle'),type:$('#sessionType'),context:$('#sessionContext'),mode:$('#recordMode'),
+  title:$('#sessionTitle'),type:$('#sessionType'),context:$('#sessionContext'),level:$('#educationLevel'),mode:$('#recordMode'),
   mic:$('#micStatus'),timer:$('#timer'),noteTime:$('#noteTime'),dot:$('#liveDot'),state:$('#recState'),
   start:$('#startBtn'),pause:$('#pauseBtn'),mark:$('#markBtn'),review:$('#questionBtn'),stop:$('#stopBtn'),
   note:$('#noteText'),add:$('#addNoteBtn'),timeline:$('#timeline'),
   result:$('#resultCard'),player:$('#audioPlayer'),download:$('#downloadAudioBtn'),
   downloadTranscript:$('#downloadTranscriptBtn'),copyTranscript:$('#copyTranscriptBtn'),
-  downloadAI:$('#downloadAIMdBtn'),copyAI:$('#copyAIPromptBtn'),downloadAITxt:$('#downloadAIPromptTxtBtn'),
+  downloadAI:$('#downloadAIMdBtn'),copyAI:$('#copyAIPromptBtn'),copyMindMap:$('#copyMindMapPromptBtn'),downloadAITxt:$('#downloadAIPromptTxtBtn'),
   export:$('#exportNotesBtn'),drive:$('#driveTextBtn'),driveStatus:$('#driveStatus'),
   list:$('#sessionList'),refresh:$('#refreshSessionsBtn'),meter:$('#meter'),install:$('#installBtn'),
   panel:$('#modulePanel'),liveTranscript:$('#liveTranscript'),speechStatus:$('#speechStatus')
@@ -125,6 +125,7 @@ async function start(){
       title:el.title.value.trim()||'Sesión '+new Date().toLocaleDateString('es-MX'),
       type:el.type.value,
       context:el.context.value.trim(),
+      educationLevel:el.level?.value||'Licenciatura',
       captureMode:el.mode?.value||'audioText',
       createdAt:new Date().toISOString(),
       durationMs:0,notes:[],markers:[],transcript:'',
@@ -218,6 +219,55 @@ function exportNotes(s=session){
 }
 
 
+function mindMapPrompt_(s=session){
+  if(!s)return '';
+  const level=s.educationLevel||el.level?.value||'Licenciatura';
+  const topic=(s.context||s.title||'Tema de la sesión').trim();
+  const transcript=(s.transcript||'').trim();
+  return [
+    'Genera un mapa mental a partir de la siguiente transcripción de audio.',
+    '',
+    'Identifica el tema central y colócalo en el núcleo. Organiza la información en ramas principales con las ideas clave y en subramas con palabras clave, conceptos breves, ejemplos cortos o relaciones importantes. Usa frases breves, evita párrafos largos y no inventes información.',
+    '',
+    'Estructura el contenido como un mapa mental visual vertical (9:16) o como un diagrama esquemático con jerarquía clara: centro → ramas principales → subramas. Sugiere íconos y colores diferenciados para cada rama, con conectores visuales limpios y tipografía clara.',
+    '',
+    'Adapta el vocabulario, la profundidad temática y los ejemplos al nivel educativo de '+level+', para facilitar el repaso rápido y la asociación de ideas.',
+    '',
+    'Datos:',
+    '- Sesión: '+(s.title||'Sin título'),
+    '- Contexto o materia: '+(s.context||'Sin contexto'),
+    '- Tema sugerido: '+topic,
+    '- Nivel educativo: '+level,
+    '- Transcripción:',
+    transcript||'[Sin transcripción disponible]',
+    '',
+    'Entrega:',
+    '1. Tema central',
+    '2. Ramas principales',
+    '3. Subramas',
+    '4. Íconos sugeridos por rama',
+    '5. Colores sugeridos por rama',
+    '6. Mapa mental final estructurado y breve',
+    '',
+    'Criterios de calidad:',
+    '- Prioriza conceptos y palabras clave.',
+    '- Evita bloques de texto continuo.',
+    '- Mantén fidelidad al contenido de la transcripción.',
+    '- Si una parte es ambigua o insuficiente, indícalo y no inventes datos.'
+  ].join('\n');
+}
+
+async function copyMindMapPrompt(s=session){
+  if(!s)return alert('Primero realiza una sesión.');
+  if(!s.transcript)return alert('Primero genera una transcripción.');
+  try{
+    await navigator.clipboard.writeText(mindMapPrompt_(s));
+    if(el.speechStatus)el.speechStatus.textContent='Prompt de mapa mental copiado';
+  }catch(e){
+    alert('No se pudo copiar automáticamente el prompt del mapa mental.');
+  }
+}
+
 function aiPackage_(s=session){
   if(!s)return '';
   const items=[...(s.notes||[]).map(x=>({...x,t:'NOTA'})),...(s.markers||[]).map(x=>({...x,t:x.kind==='important'?'IMPORTANTE':'REVISAR'}))].sort((a,b)=>a.atMs-b.atMs);
@@ -228,6 +278,7 @@ function aiPackage_(s=session){
     '**Sesión:** '+(s.title||'Sin título'),
     '**Tipo:** '+(s.type||'—'),
     '**Contexto o materia:** '+(s.context||'—'),
+    '**Nivel educativo:** '+(s.educationLevel||'Licenciatura'),
     '**Fecha:** '+new Date(s.createdAt).toLocaleString('es-MX'),
     '**Duración:** '+fmt(s.durationMs||0),
     '',
@@ -237,7 +288,7 @@ function aiPackage_(s=session){
     '',
     'Genera:',
     '1. Resumen académico estructurado.',
-    '2. Mapa mental jerárquico con tema central, ramas y subramas.',
+    '2. Mapa mental jerárquico con tema central, ramas y subramas. Para este producto sigue además las instrucciones específicas del apartado “Prompt especializado para mapa mental”.',
     '3. Conceptos clave con definiciones breves.',
     '4. Diez preguntas de repaso con respuesta.',
     '5. Diez flashcards en formato Pregunta | Respuesta.',
@@ -246,6 +297,10 @@ function aiPackage_(s=session){
     '8. Dudas, contradicciones o temas que requieran verificación.',
     '9. Relaciones importantes entre conceptos, teorías, variables o procedimientos.',
     '10. Mantén lenguaje claro, académico y fiel a la sesión.',
+    '',
+    '## Prompt especializado para mapa mental',
+    '',
+    mindMapPrompt_(s),
     '',
     '## Transcripción',
     '',
@@ -405,6 +460,7 @@ el.downloadTranscript.onclick=()=>downloadTranscript();
 el.copyTranscript.onclick=()=>copyTranscript();
 if(el.downloadAI)el.downloadAI.onclick=()=>downloadAIMarkdown();
 if(el.copyAI)el.copyAI.onclick=()=>copyAI();
+if(el.copyMindMap)el.copyMindMap.onclick=()=>copyMindMapPrompt();
 if(el.downloadAITxt)el.downloadAITxt.onclick=()=>downloadAITxt();
 el.export.onclick=()=>exportNotes();
 el.drive.onclick=()=>drive();
@@ -436,7 +492,7 @@ $('.tab').forEach(b=>b.onclick=()=>{
   }
 
   if(module==='Mapa mental'){
-    showModule('Mapa mental',transcript?mindMapLocal_(transcript,session.context||session.title):'Primero genera una transcripción.');
+    showModule('Mapa mental',transcript?mindMapLocal_(transcript,session.context||session.title)+'\n\nTIP: Usa el botón “🧠 Prompt mapa mental” en Resultado para llevar la transcripción a la IA que prefieras y generar una versión visual 9:16 con íconos, colores y nivel educativo adaptado.':'Primero genera una transcripción.');
     return;
   }
 
