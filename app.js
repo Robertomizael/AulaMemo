@@ -1,13 +1,13 @@
 const $=s=>document.querySelector(s), $$=s=>document.querySelectorAll(s);
 
 const el={
-  title:$('#sessionTitle'),type:$('#sessionType'),context:$('#sessionContext'),level:$('#educationLevel'),mode:$('#recordMode'),
+  title:$('#sessionTitle'),type:$('#sessionType'),context:$('#sessionContext'),level:$('#educationLevel'),mode:$('#recordMode'),qualFields:$('#qualFields'),participant:$('#participantId'),qualProject:$('#qualProject'),qualTechnique:$('#qualTechnique'),qualApproach:$('#qualApproach'),
   mic:$('#micStatus'),timer:$('#timer'),noteTime:$('#noteTime'),dot:$('#liveDot'),state:$('#recState'),
   start:$('#startBtn'),pause:$('#pauseBtn'),mark:$('#markBtn'),review:$('#questionBtn'),stop:$('#stopBtn'),
   note:$('#noteText'),add:$('#addNoteBtn'),timeline:$('#timeline'),
   result:$('#resultCard'),player:$('#audioPlayer'),download:$('#downloadAudioBtn'),
   downloadTranscript:$('#downloadTranscriptBtn'),copyTranscript:$('#copyTranscriptBtn'),
-  downloadAI:$('#downloadAIMdBtn'),copyAI:$('#copyAIPromptBtn'),copyMindMap:$('#copyMindMapPromptBtn'),downloadAITxt:$('#downloadAIPromptTxtBtn'),
+  downloadAI:$('#downloadAIMdBtn'),copyAI:$('#copyAIPromptBtn'),copyMindMap:$('#copyMindMapPromptBtn'),copyQual:$('#copyQualPromptBtn'),downloadQualCsv:$('#downloadQualCsvBtn'),downloadAITxt:$('#downloadAIPromptTxtBtn'),
   export:$('#exportNotesBtn'),drive:$('#driveTextBtn'),driveStatus:$('#driveStatus'),
   list:$('#sessionList'),refresh:$('#refreshSessionsBtn'),meter:$('#meter'),install:$('#installBtn'),
   panel:$('#modulePanel'),liveTranscript:$('#liveTranscript'),speechStatus:$('#speechStatus')
@@ -126,6 +126,7 @@ async function start(){
       type:el.type.value,
       context:el.context.value.trim(),
       educationLevel:el.level?.value||'Licenciatura',
+      qualitative:{participantId:el.participant?.value.trim()||'',project:el.qualProject?.value.trim()||'',technique:el.qualTechnique?.value||'',approach:el.qualApproach?.value||''},
       captureMode:el.mode?.value||'audioText',
       createdAt:new Date().toISOString(),
       durationMs:0,notes:[],markers:[],transcript:'',
@@ -268,6 +269,111 @@ async function copyMindMapPrompt(s=session){
   }
 }
 
+function qualitativePrompt_(s=session){
+  if(!s)return '';
+  const q=s.qualitative||{};
+  const approach=q.approach||'Análisis temático';
+  const technique=q.technique||s.type||'Entrevista cualitativa';
+  const transcript=(s.transcript||'').trim();
+  return [
+    'Actúa como asistente de análisis cualitativo. Trabaja exclusivamente con la transcripción proporcionada y no inventes significados, experiencias ni contexto ausente.',
+    '',
+    'Datos del estudio:',
+    '- Proyecto: '+(q.project||s.context||'No especificado'),
+    '- ID del participante: '+(q.participantId||'No especificado'),
+    '- Técnica: '+technique,
+    '- Enfoque analítico: '+approach,
+    '',
+    'Tarea:',
+    '1. Segmenta la transcripción en unidades de significado relevantes.',
+    '2. Identifica códigos in vivo usando expresiones textuales breves del participante cuando sea pertinente.',
+    '3. Propón códigos descriptivos o etiquetas analíticas breves para cada fragmento.',
+    '4. Agrupa códigos relacionados en subcategorías y categorías provisionales.',
+    '5. Propón temas emergentes solo cuando existan patrones suficientes en el texto.',
+    '6. Redacta memos analíticos breves que expliquen relaciones, tensiones, recurrencias o preguntas interpretativas.',
+    '7. Mantén siempre visible el fragmento textual que sustenta cada código.',
+    '8. Distingue claramente entre texto literal, código in vivo, interpretación analítica y categoría propuesta.',
+    '9. No conviertas las categorías sugeridas en conclusiones definitivas. Preséntalas como provisionales para revisión del investigador.',
+    '10. Señala fragmentos ambiguos, contradictorios o que requieran mayor exploración.',
+    '',
+    'Adapta el análisis al enfoque seleccionado: '+approach+'.',
+    '',
+    'Formato de salida recomendado:',
+    '| Fragmento textual | Código in vivo | Código descriptivo | Subcategoría | Categoría provisional | Memo analítico |',
+    '|---|---|---|---|---|---|',
+    '',
+    'Después de la tabla incluye:',
+    '- Temas emergentes provisionales.',
+    '- Relaciones entre categorías.',
+    '- Preguntas analíticas para una siguiente entrevista.',
+    '- Observaciones sobre saturación o necesidad de profundización, sin afirmar saturación con una sola entrevista.',
+    '',
+    'Transcripción:',
+    transcript||'[Sin transcripción disponible]'
+  ].join('\n');
+}
+
+function qualitativeRows_(s=session){
+  if(!s?.transcript)return [];
+  const sentences=splitSentences_(s.transcript).slice(0,40);
+  const globalKeys=keywords_(s.transcript,12).map(x=>x.word);
+  return sentences.map((fragment,i)=>{
+    const local=keywords_(fragment,3).map(x=>x.word);
+    const inVivo=fragment.split(/[,;:.!?]/)[0].trim().split(/\s+/).slice(0,8).join(' ');
+    const label=local.length?local.map(capitalize_).join(' / '):'Idea relevante';
+    const category=(local.find(w=>globalKeys.includes(w))||local[0]||'experiencia');
+    return {
+      fragment,
+      inVivo:'“'+inVivo.replace(/[“”"]/g,'')+'”',
+      label,
+      subcategory:capitalize_(category),
+      category:'Categoría provisional: '+capitalize_(category),
+      memo:'Revisar este fragmento en contexto y contrastarlo con otros casos.'
+    };
+  });
+}
+
+function qualitativePreview_(s=session){
+  const rows=qualitativeRows_(s);
+  if(!rows.length)return 'Primero genera una transcripción de la entrevista.';
+  const q=s.qualitative||{};
+  return [
+    'ANÁLISIS CUALITATIVO PRELIMINAR — SUGERENCIAS PARA REVISIÓN DEL INVESTIGADOR',
+    'Enfoque: '+(q.approach||'No especificado'),
+    'Técnica: '+(q.technique||s.type||'No especificada'),
+    '',
+    ...rows.slice(0,8).flatMap((r,i)=>[
+      (i+1)+'. Fragmento: '+r.fragment,
+      '   Código in vivo sugerido: '+r.inVivo,
+      '   Etiqueta sugerida: '+r.label,
+      '   Categoría provisional: '+r.subcategory,
+      '   Memo: '+r.memo,
+      ''
+    ]),
+    'Nota metodológica: estas propuestas son una primera organización automática; deben ser revisadas, renombradas, fusionadas o descartadas por el equipo investigador.'
+  ].join('\n');
+}
+
+function downloadQualCsv_(s=session){
+  if(!s?.transcript)return alert('Primero genera una transcripción de la entrevista.');
+  const rows=qualitativeRows_(s);
+  const headers=['Fragmento textual','Código in vivo sugerido','Código descriptivo sugerido','Subcategoría sugerida','Categoría provisional','Memo analítico'];
+  const esc=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
+  const csv='\uFEFF'+[headers.map(esc).join(','),...rows.map(r=>[r.fragment,r.inVivo,r.label,r.subcategory,r.category,r.memo].map(esc).join(','))].join('\n');
+  downloadTextFile_(csv,(s.title||'entrevista').replace(/\s+/g,'_')+'_codificacion_preliminar.csv','text/csv;charset=utf-8');
+}
+
+async function copyQualPrompt_(s=session){
+  if(!s)return alert('Primero realiza una sesión.');
+  if(!s.transcript)return alert('Primero genera una transcripción.');
+  try{
+    await navigator.clipboard.writeText(qualitativePrompt_(s));
+    if(el.speechStatus)el.speechStatus.textContent='Prompt cualitativo copiado';
+  }catch(e){
+    alert('No se pudo copiar automáticamente el prompt cualitativo.');
+  }
+}
+
 function aiPackage_(s=session){
   if(!s)return '';
   const items=[...(s.notes||[]).map(x=>({...x,t:'NOTA'})),...(s.markers||[]).map(x=>({...x,t:x.kind==='important'?'IMPORTANTE':'REVISAR'}))].sort((a,b)=>a.atMs-b.atMs);
@@ -279,6 +385,7 @@ function aiPackage_(s=session){
     '**Tipo:** '+(s.type||'—'),
     '**Contexto o materia:** '+(s.context||'—'),
     '**Nivel educativo:** '+(s.educationLevel||'Licenciatura'),
+    '**Enfoque cualitativo:** '+(s.qualitative?.approach||'No aplica'),
     '**Fecha:** '+new Date(s.createdAt).toLocaleString('es-MX'),
     '**Duración:** '+fmt(s.durationMs||0),
     '',
@@ -297,6 +404,10 @@ function aiPackage_(s=session){
     '8. Dudas, contradicciones o temas que requieran verificación.',
     '9. Relaciones importantes entre conceptos, teorías, variables o procedimientos.',
     '10. Mantén lenguaje claro, académico y fiel a la sesión.',
+    '',
+    '## Prompt especializado para análisis cualitativo',
+    '',
+    qualitativePrompt_(s),
     '',
     '## Prompt especializado para mapa mental',
     '',
@@ -461,6 +572,8 @@ el.copyTranscript.onclick=()=>copyTranscript();
 if(el.downloadAI)el.downloadAI.onclick=()=>downloadAIMarkdown();
 if(el.copyAI)el.copyAI.onclick=()=>copyAI();
 if(el.copyMindMap)el.copyMindMap.onclick=()=>copyMindMapPrompt();
+if(el.copyQual)el.copyQual.onclick=()=>copyQualPrompt_();
+if(el.downloadQualCsv)el.downloadQualCsv.onclick=()=>downloadQualCsv_();
 if(el.downloadAITxt)el.downloadAITxt.onclick=()=>downloadAITxt();
 el.export.onclick=()=>exportNotes();
 el.drive.onclick=()=>drive();
@@ -505,7 +618,24 @@ $('.tab').forEach(b=>b.onclick=()=>{
     showModule('Notas',notesLocal_(session));
     return;
   }
+
+  if(module==='Cualitativo'){
+    const isQual=['Entrevista cualitativa','Grupo focal'].includes(session.type);
+    showModule('Análisis cualitativo',isQual?qualitativePreview_(session):'Para usar este módulo selecciona “Entrevista cualitativa” o “Grupo focal” como tipo de sesión.');
+    return;
+  }
 });
+
+
+function toggleQualFields_(){
+  const active=['Entrevista cualitativa','Grupo focal'].includes(el.type?.value);
+  if(el.qualFields)el.qualFields.classList.toggle('hidden',!active);
+  if(active&&el.level)el.level.value='Posgrado';
+}
+if(el.type){
+  el.type.addEventListener('change',toggleQualFields_);
+  toggleQualFields_();
+}
 
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installPrompt=e;el.install.classList.remove('hidden')});
 el.install.onclick=async()=>{if(installPrompt){installPrompt.prompt();await installPrompt.userChoice;installPrompt=null;el.install.classList.add('hidden')}};
