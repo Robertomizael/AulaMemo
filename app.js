@@ -7,6 +7,7 @@ const el={
   note:$('#noteText'),add:$('#addNoteBtn'),timeline:$('#timeline'),
   result:$('#resultCard'),player:$('#audioPlayer'),download:$('#downloadAudioBtn'),
   downloadTranscript:$('#downloadTranscriptBtn'),copyTranscript:$('#copyTranscriptBtn'),
+  downloadAI:$('#downloadAIMdBtn'),copyAI:$('#copyAIPromptBtn'),downloadAITxt:$('#downloadAIPromptTxtBtn'),
   export:$('#exportNotesBtn'),drive:$('#driveTextBtn'),driveStatus:$('#driveStatus'),
   list:$('#sessionList'),refresh:$('#refreshSessionsBtn'),meter:$('#meter'),install:$('#installBtn'),
   panel:$('#modulePanel'),liveTranscript:$('#liveTranscript'),speechStatus:$('#speechStatus')
@@ -216,6 +217,81 @@ function exportNotes(s=session){
   a.href=u;a.download=(s.title||'sesion').replace(/\s+/g,'_')+'_sesion.txt';a.click();setTimeout(()=>URL.revokeObjectURL(u),2000);
 }
 
+
+function aiPackage_(s=session){
+  if(!s)return '';
+  const items=[...(s.notes||[]).map(x=>({...x,t:'NOTA'})),...(s.markers||[]).map(x=>({...x,t:x.kind==='important'?'IMPORTANTE':'REVISAR'}))].sort((a,b)=>a.atMs-b.atMs);
+  const transcript=(s.transcript||'').trim();
+  return [
+    '# AulaMemo AI — Paquete universal para análisis con IA',
+    '',
+    '**Sesión:** '+(s.title||'Sin título'),
+    '**Tipo:** '+(s.type||'—'),
+    '**Contexto o materia:** '+(s.context||'—'),
+    '**Fecha:** '+new Date(s.createdAt).toLocaleString('es-MX'),
+    '**Duración:** '+fmt(s.durationMs||0),
+    '',
+    '## Instrucciones para la IA',
+    '',
+    'Analiza solamente el contenido incluido en este archivo. No inventes datos. Si falta información, indícalo claramente.',
+    '',
+    'Genera:',
+    '1. Resumen académico estructurado.',
+    '2. Mapa mental jerárquico con tema central, ramas y subramas.',
+    '3. Conceptos clave con definiciones breves.',
+    '4. Diez preguntas de repaso con respuesta.',
+    '5. Diez flashcards en formato Pregunta | Respuesta.',
+    '6. Guía de estudio organizada por temas.',
+    '7. Glosario de términos relevantes.',
+    '8. Dudas, contradicciones o temas que requieran verificación.',
+    '9. Relaciones importantes entre conceptos, teorías, variables o procedimientos.',
+    '10. Mantén lenguaje claro, académico y fiel a la sesión.',
+    '',
+    '## Transcripción',
+    '',
+    transcript||'[Sin transcripción disponible]',
+    '',
+    '## Notas y marcadores',
+    '',
+    items.length?items.map(x=>'- ['+fmt(x.atMs)+'] **'+x.t+'**: '+(x.text||x.label||'')).join('\n'):'[Sin notas o marcadores]',
+    '',
+    '## Cierre',
+    '',
+    'Distingue entre información explícita de la sesión e inferencias o sugerencias generadas.'
+  ].join('\n');
+}
+
+function downloadTextFile_(text,fileName,mime='text/plain;charset=utf-8'){
+  const u=URL.createObjectURL(new Blob([text],{type:mime})),a=document.createElement('a');
+  a.href=u;a.download=fileName;a.click();setTimeout(()=>URL.revokeObjectURL(u),2000);
+}
+
+function downloadAIMarkdown(s=session){
+  if(!s)return alert('Primero realiza una sesión.');
+  if(!s.transcript&&!((s.notes||[]).length||(s.markers||[]).length))return alert('La sesión todavía no tiene contenido para exportar.');
+  downloadTextFile_(aiPackage_(s),(s.title||'sesion').replace(/\s+/g,'_')+'_para_IA.md','text/markdown;charset=utf-8');
+  if(el.speechStatus)el.speechStatus.textContent='Archivo para IA descargado';
+}
+
+function downloadAITxt(s=session){
+  if(!s)return alert('Primero realiza una sesión.');
+  if(!s.transcript&&!((s.notes||[]).length||(s.markers||[]).length))return alert('La sesión todavía no tiene contenido para exportar.');
+  downloadTextFile_(aiPackage_(s),(s.title||'sesion').replace(/\s+/g,'_')+'_prompt_IA.txt');
+  if(el.speechStatus)el.speechStatus.textContent='Prompt descargado';
+}
+
+async function copyAI(s=session){
+  if(!s)return alert('Primero realiza una sesión.');
+  const pack=aiPackage_(s);
+  if(!pack)return alert('No hay contenido disponible.');
+  try{
+    await navigator.clipboard.writeText(pack);
+    if(el.speechStatus)el.speechStatus.textContent='Paquete para IA copiado';
+  }catch(e){
+    alert('No se pudo copiar automáticamente. Usa la descarga del archivo .md.');
+  }
+}
+
 async function drive(s=session){
   const url=window.AULAMEMO_CONFIG?.appsScriptUrl;
   if(!url)return alert('Falta configurar la URL de Apps Script en config.js.');
@@ -310,8 +386,9 @@ async function render(){
   el.list.innerHTML=arr.length?arr.map(s=>'<article class="session"><div><b>'+safe(s.title)+'</b><div class="meta">'+safe(s.type)+' · '+new Date(s.createdAt).toLocaleString('es-MX')+' · '+fmt(s.durationMs||0)+(s.transcript?' · ✓ Texto':'')+'</div></div><div class="controls"><button class="btn light" data-a="'+s.id+'">Audio</button><button class="btn light" data-t="'+s.id+'">Texto</button><button class="btn light" data-n="'+s.id+'">Sesión</button><button class="btn danger" data-d="'+s.id+'">Eliminar</button></div></article>').join(''):'<div class="session"><div>No hay sesiones guardadas todavía.</div></div>';
   $$('[data-a]').forEach(b=>b.onclick=()=>download(arr.find(x=>x.id===b.dataset.a)));
   $$('[data-t]').forEach(b=>b.onclick=()=>downloadTranscript(arr.find(x=>x.id===b.dataset.t)));
-  $$('[data-n]').forEach(b=>b.onclick=()=>exportNotes(arr.find(x=>x.id===b.dataset.n)));
-  $$('[data-d]').forEach(b=>b.onclick=async()=>{const s=arr.find(x=>x.id===b.dataset.d);if(confirm('¿Eliminar '+s.title+'?')){await removeSession(s.id);render()}});
+  $('[data-n]').forEach(b=>b.onclick=()=>exportNotes(arr.find(x=>x.id===b.dataset.n)));
+  $('[data-ai]').forEach(b=>b.onclick=()=>downloadAIMarkdown(arr.find(x=>x.id===b.dataset.ai)));
+  $('[data-d]').forEach(b=>b.onclick=async()=>{const s=arr.find(x=>x.id===b.dataset.d);if(confirm('¿Eliminar '+s.title+'?')){await removeSession(s.id);render()}});
 }
 
 function meter(st){try{ctx=new (window.AudioContext||window.webkitAudioContext)();const src=ctx.createMediaStreamSource(st);analyser=ctx.createAnalyser();src.connect(analyser);analyser.fftSize=256;const c=el.meter,g=c.getContext('2d'),v=new Uint8Array(analyser.frequencyBinCount);(function draw(){analyser.getByteFrequencyData(v);const avg=v.reduce((a,b)=>a+b,0)/v.length,w=Math.max(5,c.width*Math.min(1,avg/100)),gr=g.createLinearGradient(0,0,c.width,0);gr.addColorStop(0,'#1f5fbd');gr.addColorStop(.72,'#08285f');gr.addColorStop(1,'#d8a71a');g.clearRect(0,0,c.width,c.height);g.fillStyle='#dbe8fb';g.fillRect(0,0,c.width,c.height);g.fillStyle=gr;g.fillRect(0,0,w,c.height);frame=requestAnimationFrame(draw)})()}catch(e){}}
@@ -326,6 +403,9 @@ el.add.onclick=note;
 el.download.onclick=()=>download();
 el.downloadTranscript.onclick=()=>downloadTranscript();
 el.copyTranscript.onclick=()=>copyTranscript();
+if(el.downloadAI)el.downloadAI.onclick=()=>downloadAIMarkdown();
+if(el.copyAI)el.copyAI.onclick=()=>copyAI();
+if(el.downloadAITxt)el.downloadAITxt.onclick=()=>downloadAITxt();
 el.export.onclick=()=>exportNotes();
 el.drive.onclick=()=>drive();
 el.refresh.onclick=render;
