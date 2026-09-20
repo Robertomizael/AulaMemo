@@ -1,1 +1,1 @@
-window.AULAMEMO_CONFIG={authorName:"Dr. Roberto Joel Tirado Reyes",institution:"Universidad Autónoma de Sinaloa",appsScriptUrl:"",driveRootFolderName:"AulaMemo AI"};
+window.AULAMEMO_CONFIG={authorName:"Dr. Roberto Joel Tirado Reyes",institution:"Universidad Autónoma de Sinaloa",appsScriptUrl:"https://script.google.com/macros/s/AKfycbyw0luliscNn83jAbdIeFQP65wzcr_vZzeOZeeyRcMxaq0qttedZJbzP_BX-eRJrKQt/exec",driveRootFolderName:"AulaMemo AI"};
