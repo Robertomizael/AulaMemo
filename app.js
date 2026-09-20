@@ -228,6 +228,83 @@ async function drive(s=session){
 
 function showModule(title,content){el.panel.innerHTML='<div><h3>'+safe(title)+'</h3><p style="white-space:pre-wrap">'+safe(content)+'</p></div>'}
 
+function words_(text=''){
+  return String(text).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').match(/[a-záéíóúñü0-9]{3,}/gi)||[];
+}
+
+const STOP_=new Set(('que de la el en y a los las un una unos unas del al se por para con no es su lo como mas pero sus le ya o este si porque esta entre cuando muy sin sobre tambien me hasta hay donde quien desde todo nos durante todos uno les ni contra otros ese eso ante ellos e esto mi antes algunos que unos yo otro otras otra el tanto esa estos mucho quienes nada muchos cual poco ella estar estas algunas algo nosotros mis tu te ti tus ellas nosotras vosotros vosotras os mio mia mios mias tuyo tuya tuyos tuyas suyo suya suyos suyas nuestro nuestra nuestros nuestras vuestro vuestra vuestros vuestras esos esas estoy estas esta estamos estan este esteis esten estar estaras estara estaremos estareis estaran estaria estarias estariamos estariais estarian estaba estabas estabamos estabais estaban estuve estuviste estuvo estuvimos estuvisteis estuvieron estuviera estuvieras estuvieramos estuvierais estuvieran estuviese estuvieses estuviesemos estuvieseis estuviesen estando estado estada estados estadas estoy esta estamos estan').split(/\s+/));
+
+function splitSentences_(text=''){
+  return String(text).replace(/\s+/g,' ').trim().split(/(?<=[.!?])\s+|\s{2,}/).map(s=>s.trim()).filter(s=>s.length>20);
+}
+
+function keywords_(text='',limit=8){
+  const freq={};
+  for(const w0 of words_(text)){
+    const w=w0.toLowerCase();
+    if(STOP_.has(w)||w.length<4)continue;
+    freq[w]=(freq[w]||0)+1;
+  }
+  return Object.entries(freq).sort((a,b)=>b[1]-a[1]).slice(0,limit).map(([w,n])=>({word:w,count:n}));
+}
+
+function summaryLocal_(text=''){
+  const sentences=splitSentences_(text);
+  if(!sentences.length)return text.trim()||'No hay transcripción suficiente para generar un resumen.';
+  if(sentences.length<=3)return sentences.join(' ');
+  const keys=new Map(keywords_(text,14).map((x,i)=>[x.word,14-i]));
+  const scored=sentences.map((s,i)=>{
+    const ws=words_(s).map(w=>w.toLowerCase());
+    const score=ws.reduce((a,w)=>a+(keys.get(w)||0),0)+(i===0?5:0);
+    return {s,i,score};
+  });
+  const take=Math.min(5,Math.max(3,Math.ceil(sentences.length*.3)));
+  return scored.sort((a,b)=>b.score-a.score).slice(0,take).sort((a,b)=>a.i-b.i).map(x=>'• '+x.s).join('\n');
+}
+
+function mindMapLocal_(text='',title='Tema central'){
+  const keys=keywords_(text,6);
+  if(!keys.length)return 'No hay suficiente texto para construir el mapa mental.';
+  const sentences=splitSentences_(text);
+  let out=(title||'Tema central').toUpperCase()+'\n';
+  keys.forEach((k,i)=>{
+    out+='\n'+(i===keys.length-1?'└── ':'├── ')+capitalize_(k.word);
+    const related=sentences.filter(s=>words_(s).some(w=>w.toLowerCase()===k.word)).slice(0,2);
+    related.forEach((s,j)=>{
+      const short=s.length>105?s.slice(0,102)+'…':s;
+      out+='\n    '+(j===related.length-1?'└─ ':'├─ ')+short;
+    });
+  });
+  return out;
+}
+
+function studyLocal_(text=''){
+  const keys=keywords_(text,5);
+  const sentences=splitSentences_(text);
+  if(!keys.length||!sentences.length)return 'No hay suficiente texto para generar material de estudio.';
+  const lines=['PREGUNTAS DE REPASO'];
+  keys.forEach((k,i)=>{
+    const s=sentences.find(x=>words_(x).some(w=>w.toLowerCase()===k.word))||sentences[i%sentences.length];
+    lines.push('\n'+(i+1)+'. ¿Qué se explicó acerca de '+k.word+'?');
+    lines.push('   Respuesta guía: '+s);
+  });
+  lines.push('\nCONCEPTOS CLAVE\n'+keys.map(k=>'• '+capitalize_(k.word)).join('\n'));
+  return lines.join('\n');
+}
+
+function notesLocal_(s){
+  if(!s)return 'Todavía no hay una sesión activa.';
+  const keys=keywords_(s.transcript||'',7);
+  const items=[...(s.notes||[]).map(x=>({...x,t:'NOTA'})),...(s.markers||[]).map(x=>({...x,t:x.kind==='important'?'IMPORTANTE':'REVISAR'}))].sort((a,b)=>a.atMs-b.atMs);
+  const parts=[];
+  if(keys.length)parts.push('CONCEPTOS CLAVE\n'+keys.map(k=>'• '+capitalize_(k.word)).join('\n'));
+  if(items.length)parts.push('NOTAS Y MARCADORES\n'+items.map(x=>'['+fmt(x.atMs)+'] '+x.t+': '+(x.text||x.label||'')).join('\n'));
+  if(s.transcript)parts.push('SÍNTESIS\n'+summaryLocal_(s.transcript));
+  return parts.join('\n\n')||'Todavía no hay notas ni transcripción.';
+}
+
+function capitalize_(s=''){return s.charAt(0).toUpperCase()+s.slice(1)}
+
 async function render(){
   const arr=await allSessions();
   el.list.innerHTML=arr.length?arr.map(s=>'<article class="session"><div><b>'+safe(s.title)+'</b><div class="meta">'+safe(s.type)+' · '+new Date(s.createdAt).toLocaleString('es-MX')+' · '+fmt(s.durationMs||0)+(s.transcript?' · ✓ Texto':'')+'</div></div><div class="controls"><button class="btn light" data-a="'+s.id+'">Audio</button><button class="btn light" data-t="'+s.id+'">Texto</button><button class="btn light" data-n="'+s.id+'">Sesión</button><button class="btn danger" data-d="'+s.id+'">Eliminar</button></div></article>').join(''):'<div class="session"><div>No hay sesiones guardadas todavía.</div></div>';
@@ -253,26 +330,45 @@ el.export.onclick=()=>exportNotes();
 el.drive.onclick=()=>drive();
 el.refresh.onclick=render;
 
-$$('.tab').forEach(b=>b.onclick=()=>{
-  $$('.tab').forEach(x=>x.classList.remove('active'));b.classList.add('active');
+$('.tab').forEach(b=>b.onclick=()=>{
+  $('.tab').forEach(x=>x.classList.remove('active'));b.classList.add('active');
   const module=b.dataset.module;
+  const transcript=session?.transcript?.trim()||'';
+
   if(module==='Transcripción'){
-    showModule('Transcripción',session?.transcript||'Todavía no hay texto guardado. Inicia una sesión en modo “Grabar audio + transcribir en vivo”.');
+    showModule('Transcripción',transcript||'Todavía no hay texto guardado. Inicia una sesión en modo “Grabar audio + transcribir en vivo”.');
     return;
   }
-  if(module==='Audio'){showModule('Audio','El audio se guarda localmente y está disponible en el reproductor del bloque Resultado.');return}
+
+  if(module==='Audio'){
+    showModule('Audio','El audio se guarda localmente y está disponible en el reproductor del bloque Resultado.');
+    return;
+  }
+
+  if(!session){
+    showModule(module,'Primero realiza una grabación para usar este módulo.');
+    return;
+  }
+
+  if(module==='Resumen'){
+    showModule('Resumen',transcript?summaryLocal_(transcript):'Primero genera una transcripción.');
+    return;
+  }
+
+  if(module==='Mapa mental'){
+    showModule('Mapa mental',transcript?mindMapLocal_(transcript,session.context||session.title):'Primero genera una transcripción.');
+    return;
+  }
+
+  if(module==='Estudiar'){
+    showModule('Estudiar',transcript?studyLocal_(transcript):'Primero genera una transcripción.');
+    return;
+  }
+
   if(module==='Notas'){
-    if(!session){showModule('Notas','Todavía no hay una sesión activa.');return}
-    const items=[...(session.notes||[]).map(x=>({...x,t:'NOTA'})),...(session.markers||[]).map(x=>({...x,t:x.kind==='important'?'IMPORTANTE':'REVISAR'}))].sort((a,b)=>a.atMs-b.atMs);
-    showModule('Notas',items.length?items.map(x=>'['+fmt(x.atMs)+'] '+x.t+': '+(x.text||x.label||'')).join('\n'):'Todavía no hay notas ni marcadores.');
+    showModule('Notas',notesLocal_(session));
     return;
   }
-  const text={
-    Resumen:'Este módulo se construirá a partir del texto transcrito, sin obligar al alumno a usar una API de pago.',
-    'Mapa mental':'Este módulo se construirá a partir del texto transcrito.',
-    Estudiar:'Este módulo se construirá a partir del texto transcrito para generar preguntas y material de repaso.'
-  }[module]||'Módulo preparado.';
-  showModule(module,text);
 });
 
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installPrompt=e;el.install.classList.remove('hidden')});
