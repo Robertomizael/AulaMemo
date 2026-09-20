@@ -383,7 +383,7 @@ function capitalize_(s=''){return s.charAt(0).toUpperCase()+s.slice(1)}
 
 async function render(){
   const arr=await allSessions();
-  el.list.innerHTML=arr.length?arr.map(s=>'<article class="session"><div><b>'+safe(s.title)+'</b><div class="meta">'+safe(s.type)+' · '+new Date(s.createdAt).toLocaleString('es-MX')+' · '+fmt(s.durationMs||0)+(s.transcript?' · ✓ Texto':'')+'</div></div><div class="controls"><button class="btn light" data-a="'+s.id+'">Audio</button><button class="btn light" data-t="'+s.id+'">Texto</button><button class="btn light" data-n="'+s.id+'">Sesión</button><button class="btn danger" data-d="'+s.id+'">Eliminar</button></div></article>').join(''):'<div class="session"><div>No hay sesiones guardadas todavía.</div></div>';
+  el.list.innerHTML=arr.length?arr.map(s=>'<article class="session"><div><b>'+safe(s.title)+'</b><div class="meta">'+safe(s.type)+' · '+new Date(s.createdAt).toLocaleString('es-MX')+' · '+fmt(s.durationMs||0)+(s.transcript?' · ✓ Texto':'')+'</div></div><div class="controls"><button class="btn light" data-a="'+s.id+'">Audio</button><button class="btn light" data-t="'+s.id+'">Texto</button><button class="btn light" data-n="'+s.id+'">Sesión</button><button class="btn goldbtn" data-ai="'+s.id+'">Para IA</button><button class="btn danger" data-d="'+s.id+'">Eliminar</button></div></article>').join(''):'<div class="session"><div>No hay sesiones guardadas todavía.</div></div>';
   $$('[data-a]').forEach(b=>b.onclick=()=>download(arr.find(x=>x.id===b.dataset.a)));
   $$('[data-t]').forEach(b=>b.onclick=()=>downloadTranscript(arr.find(x=>x.id===b.dataset.t)));
   $('[data-n]').forEach(b=>b.onclick=()=>exportNotes(arr.find(x=>x.id===b.dataset.n)));
