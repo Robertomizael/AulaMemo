@@ -552,9 +552,9 @@ async function render(){
   el.list.innerHTML=arr.length?arr.map(s=>'<article class="session"><div><b>'+safe(s.title)+'</b><div class="meta">'+safe(s.type)+' · '+new Date(s.createdAt).toLocaleString('es-MX')+' · '+fmt(s.durationMs||0)+(s.transcript?' · ✓ Texto':'')+'</div></div><div class="controls"><button class="btn light" data-a="'+s.id+'">Audio</button><button class="btn light" data-t="'+s.id+'">Texto</button><button class="btn light" data-n="'+s.id+'">Sesión</button><button class="btn goldbtn" data-ai="'+s.id+'">Para IA</button><button class="btn danger" data-d="'+s.id+'">Eliminar</button></div></article>').join(''):'<div class="session"><div>No hay sesiones guardadas todavía.</div></div>';
   $$('[data-a]').forEach(b=>b.onclick=()=>download(arr.find(x=>x.id===b.dataset.a)));
   $$('[data-t]').forEach(b=>b.onclick=()=>downloadTranscript(arr.find(x=>x.id===b.dataset.t)));
-  $('[data-n]').forEach(b=>b.onclick=()=>exportNotes(arr.find(x=>x.id===b.dataset.n)));
-  $('[data-ai]').forEach(b=>b.onclick=()=>downloadAIMarkdown(arr.find(x=>x.id===b.dataset.ai)));
-  $('[data-d]').forEach(b=>b.onclick=async()=>{const s=arr.find(x=>x.id===b.dataset.d);if(confirm('¿Eliminar '+s.title+'?')){await removeSession(s.id);render()}});
+  $$('[data-n]').forEach(b=>b.onclick=()=>exportNotes(arr.find(x=>x.id===b.dataset.n)));
+  $$('[data-ai]').forEach(b=>b.onclick=()=>downloadAIMarkdown(arr.find(x=>x.id===b.dataset.ai)));
+  $$('[data-d]').forEach(b=>b.onclick=async()=>{const s=arr.find(x=>x.id===b.dataset.d);if(confirm('¿Eliminar '+s.title+'?')){await removeSession(s.id);render()}});
 }
 
 function meter(st){try{ctx=new (window.AudioContext||window.webkitAudioContext)();const src=ctx.createMediaStreamSource(st);analyser=ctx.createAnalyser();src.connect(analyser);analyser.fftSize=256;const c=el.meter,g=c.getContext('2d'),v=new Uint8Array(analyser.frequencyBinCount);(function draw(){analyser.getByteFrequencyData(v);const avg=v.reduce((a,b)=>a+b,0)/v.length,w=Math.max(5,c.width*Math.min(1,avg/100)),gr=g.createLinearGradient(0,0,c.width,0);gr.addColorStop(0,'#1f5fbd');gr.addColorStop(.72,'#08285f');gr.addColorStop(1,'#d8a71a');g.clearRect(0,0,c.width,c.height);g.fillStyle='#dbe8fb';g.fillRect(0,0,c.width,c.height);g.fillStyle=gr;g.fillRect(0,0,w,c.height);frame=requestAnimationFrame(draw)})()}catch(e){}}
@@ -579,8 +579,8 @@ el.export.onclick=()=>exportNotes();
 el.drive.onclick=()=>drive();
 el.refresh.onclick=render;
 
-$('.tab').forEach(b=>b.onclick=()=>{
-  $('.tab').forEach(x=>x.classList.remove('active'));b.classList.add('active');
+$$('.tab').forEach(b=>b.onclick=()=>{
+  $$('.tab').forEach(x=>x.classList.remove('active'));b.classList.add('active');
   const module=b.dataset.module;
   const transcript=session?.transcript?.trim()||'';
 
