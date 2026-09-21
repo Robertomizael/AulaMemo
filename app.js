@@ -10,7 +10,8 @@ const el={
   downloadAI:$('#downloadAIMdBtn'),copyAI:$('#copyAIPromptBtn'),copyMindMap:$('#copyMindMapPromptBtn'),copyQual:$('#copyQualPromptBtn'),downloadQualCsv:$('#downloadQualCsvBtn'),downloadAITxt:$('#downloadAIPromptTxtBtn'),
   export:$('#exportNotesBtn'),drive:$('#driveTextBtn'),driveStatus:$('#driveStatus'),
   list:$('#sessionList'),refresh:$('#refreshSessionsBtn'),meter:$('#meter'),install:$('#installBtn'),
-  panel:$('#modulePanel'),liveTranscript:$('#liveTranscript'),speechStatus:$('#speechStatus')
+  panel:$('#modulePanel'),liveTranscript:$('#liveTranscript'),speechStatus:$('#speechStatus'),
+  manualTranscript:$('#manualTranscriptInput'),saveManualTranscript:$('#saveManualTranscriptBtn'),restartSpeech:$('#restartSpeechBtn')
 };
 
 let rec,stream,session,startAt=0,acc=0,pauseAt=0,tick,installPrompt,audioURL,analyser,ctx,frame;
@@ -78,7 +79,13 @@ function setupRecognition(){
       if(el.speechStatus)el.speechStatus.textContent='Permiso de voz bloqueado';
       showModule('Transcripción','El navegador bloqueó el reconocimiento de voz. Revisa el permiso del micrófono o usa “Solo grabar audio”.');
     }else if(e.error==='network'){
-      if(el.speechStatus)el.speechStatus.textContent='Sin servicio de voz';
+      shouldListen=false;
+      if(el.speechStatus)el.speechStatus.textContent='Servicio de voz no disponible';
+      showModule('Transcripción','El servicio de reconocimiento de voz del navegador no respondió. El audio continúa guardándose. Puedes reintentar o pegar una transcripción en el cuadro “Texto manual / entrevista ya transcrita”.');
+    }else if(e.error==='no-speech'){
+      if(el.speechStatus)el.speechStatus.textContent='Esperando voz';
+    }else{
+      if(el.speechStatus)el.speechStatus.textContent='Error de voz: '+e.error;
     }
   };
 
@@ -195,7 +202,7 @@ async function getAudioBlob(s=session){
   return new Blob(cs.map(x=>x.blob),{type:s.mimeType||'audio/webm'});
 }
 
-async function download(s=session){if(!s)return;const blob=await getAudioBlob(s);const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=(s.title||'sesion').replace(/\s+/g,'_')+'.'+ext(s.mimeType);a.click();setTimeout(()=>URL.revokeObjectURL(u),2000)}
+async function download(s=session){if(!s)return;try{const blob=await getAudioBlob(s);const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=(s.title||'sesion').replace(/\s+/g,'_')+'.'+ext(s.mimeType);a.click();setTimeout(()=>URL.revokeObjectURL(u),2000)}catch(e){alert(e.message||'Esta sesión no contiene audio.')}}
 
 function downloadTranscript(s=session){
   if(!s||!s.transcript)return alert('Esta sesión todavía no tiene transcripción.');
@@ -209,6 +216,52 @@ async function copyTranscript(s=session){
   if(!s||!s.transcript)return alert('Esta sesión todavía no tiene transcripción.');
   try{await navigator.clipboard.writeText(s.transcript);if(el.speechStatus)el.speechStatus.textContent='Texto copiado';}
   catch(e){alert('No se pudo copiar automáticamente. Puedes seleccionar el texto manualmente.')}
+}
+
+
+async function ensureTextSession_(){
+  if(session)return session;
+  session={
+    id:crypto.randomUUID?crypto.randomUUID():String(Date.now()),
+    title:el.title.value.trim()||'Entrevista / texto '+new Date().toLocaleDateString('es-MX'),
+    type:el.type.value,
+    context:el.context.value.trim(),
+    educationLevel:el.level?.value||'Posgrado',
+    qualitative:{participantId:el.participant?.value.trim()||'',project:el.qualProject?.value.trim()||'',technique:el.qualTechnique?.value||'',approach:el.qualApproach?.value||''},
+    captureMode:'textOnly',
+    createdAt:new Date().toISOString(),
+    durationMs:0,notes:[],markers:[],transcript:'',mimeType:'',complete:true
+  };
+  await put(SESS,session);
+  return session;
+}
+
+async function saveManualTranscript_(){
+  const text=(el.manualTranscript?.value||'').trim();
+  if(!text)return alert('Pega o escribe primero el texto de la transcripción.');
+  await ensureTextSession_();
+  session.type=el.type?.value||session.type;
+  session.context=el.context?.value.trim()||session.context;
+  session.educationLevel=el.level?.value||session.educationLevel;
+  session.qualitative={participantId:el.participant?.value.trim()||session.qualitative?.participantId||'',project:el.qualProject?.value.trim()||session.qualitative?.project||'',technique:el.qualTechnique?.value||session.qualitative?.technique||'',approach:el.qualApproach?.value||session.qualitative?.approach||''};
+  session.transcript=text;
+  session.complete=true;
+  await put(SESS,session);
+  interimText='';
+  updateTranscriptView();
+  if(el.speechStatus)el.speechStatus.textContent='Texto guardado';
+  el.result?.classList.remove('hidden');
+  const isQual=['Entrevista cualitativa','Grupo focal'].includes(session.type);
+  showModule(isQual?'Análisis cualitativo':'Transcripción',isQual?qualitativePreview_(session):session.transcript);
+  await render();
+}
+
+function restartSpeech_(){
+  if(!rec||rec.state!=='recording')return showModule('Transcripción','Para reintentar la transcripción en vivo debe haber una grabación activa. Si ya tienes el texto, pégalo en “Texto manual / entrevista ya transcrita”.');
+  if(session?.captureMode!=='audioText')return showModule('Transcripción','La sesión actual está configurada como “Solo grabar audio”.');
+  stopRecognition(true);
+  recognition=null;
+  setTimeout(()=>startRecognition(),200);
 }
 
 function exportNotes(s=session){
@@ -575,6 +628,8 @@ if(el.copyMindMap)el.copyMindMap.onclick=()=>copyMindMapPrompt();
 if(el.copyQual)el.copyQual.onclick=()=>copyQualPrompt_();
 if(el.downloadQualCsv)el.downloadQualCsv.onclick=()=>downloadQualCsv_();
 if(el.downloadAITxt)el.downloadAITxt.onclick=()=>downloadAITxt();
+if(el.saveManualTranscript)el.saveManualTranscript.onclick=()=>saveManualTranscript_();
+if(el.restartSpeech)el.restartSpeech.onclick=()=>restartSpeech_();
 el.export.onclick=()=>exportNotes();
 el.drive.onclick=()=>drive();
 el.refresh.onclick=render;
@@ -621,7 +676,8 @@ $$('.tab').forEach(b=>b.onclick=()=>{
 
   if(module==='Cualitativo'){
     const isQual=['Entrevista cualitativa','Grupo focal'].includes(session.type);
-    showModule('Análisis cualitativo',isQual?qualitativePreview_(session):'Para usar este módulo selecciona “Entrevista cualitativa” o “Grupo focal” como tipo de sesión.');
+    if(!isQual){showModule('Análisis cualitativo','Para usar este módulo selecciona “Entrevista cualitativa” o “Grupo focal” como tipo de sesión.');return;}
+    showModule('Análisis cualitativo',transcript?qualitativePreview_(session):'La entrevista está creada, pero todavía no tiene texto. Usa la transcripción en vivo o pega la entrevista en “Texto manual / entrevista ya transcrita” y pulsa “Guardar texto”.');
     return;
   }
 });
